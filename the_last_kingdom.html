@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>The Last Kingdom</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101820;font-family:Arial,sans-serif;touch-action:none}
+#game{display:block;width:100%;height:100%}
+#hud{position:fixed;inset:0;pointer-events:none;color:white}
+.panel{background:#101820bb;border:1px solid #ffffff33;border-radius:12px;padding:10px 13px;text-shadow:0 2px 3px #000}
+#brand{position:absolute;top:12px;left:12px;font-weight:900;letter-spacing:2px;font-size:16px}
+#stats{position:absolute;top:12px;right:12px;text-align:right;font-size:13px;line-height:1.7}
+#healthWrap{position:absolute;top:72px;left:12px;width:160px;height:12px;background:#333;border:1px solid #ffffff88;border-radius:10px;overflow:hidden}
+#health{height:100%;width:100%;background:linear-gradient(90deg,#e43d3d,#f6a623);transition:width .15s}
+#message{position:absolute;top:46%;width:100%;text-align:center;font-weight:bold;font-size:22px;text-shadow:0 2px 5px #000}
+#controls{position:absolute;bottom:18px;left:0;right:0;display:flex;justify-content:space-between;align-items:end;padding:0 18px;pointer-events:none}
+#stick{width:124px;height:124px;border-radius:50%;background:#ffffff22;border:2px solid #ffffff66;position:relative;pointer-events:auto;touch-action:none}
+#knob{position:absolute;width:48px;height:48px;border-radius:50%;background:#ffffff99;left:36px;top:36px}
+#actions{display:flex;gap:12px;align-items:end;pointer-events:auto}
+.action{border:2px solid #ffffff99;background:#a52a2acc;color:white;border-radius:50%;width:70px;height:70px;font-weight:bold;font-size:13px;touch-action:none}
+#aim{background:#263d59dd;width:58px;height:58px}
+#help{position:absolute;bottom:154px;right:18px;font-size:11px;max-width:150px;text-align:right;color:#fff}
+#overlay{position:fixed;inset:0;background:#07111be8;color:white;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;z-index:5}
+#card{max-width:440px;background:#172635;border:1px solid #ffffff33;border-radius:18px;padding:26px;box-shadow:0 15px 60px #000}
+h1{margin:0 0 8px;font-size:32px;letter-spacing:2px}
+#start{background:#d83b2f;color:white;border:0;border-radius:10px;padding:14px 28px;font-size:17px;font-weight:bold;margin-top:12px}
+.small{color:#cbd5df;font-size:13px;line-height:1.5}
+@media(min-width:800px){#controls{padding:0 40px 24px}#stick{width:140px;height:140px}#knob{left:43px;top:43px}#help{bottom:170px}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+ <div id="brand" class="panel">THE LAST KINGDOM</div>
+ <div id="stats" class="panel">ÉLIMINATIONS : <span id="kills">0</span><br>ENNEMIS : <span id="left">0</span></div>
+ <div id="healthWrap"><div id="health"></div></div>
+ <div id="message"></div>
+ <div id="help">Joystick : se déplacer<br>FIRE : tirer • AIM : viser</div>
+ <div id="controls">
+  <div id="stick"><div id="knob"></div></div>
+  <div id="actions"><button class="action" id="aim">AIM</button><button class="action" id="fire">FIRE</button></div>
+ </div>
+</div>
+<div id="overlay"><div id="card">
+ <h1>THE LAST KINGDOM</h1>
+ <p><b>MISSION 01 — ZONE HOSTILE</b></p>
+ <p class="small">Élimine les soldats ennemis et reste en vie. Déplace-toi avec le joystick et utilise FIRE pour tirer.</p>
+ <p class="small">Sur ordinateur : ZQSD ou WASD pour bouger, souris pour viser, clic pour tirer.</p>
+ <button id="start">COMMENCER LA MISSION</button>
+</div></div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+const canvas=document.querySelector('#game');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x8da5ad);
+scene.fog=new THREE.Fog(0x8da5ad,35,115);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,180);
+const clock=new THREE.Clock();
+
+scene.add(new THREE.HemisphereLight(0xdceeff,0x49533b,2));
+const sun=new THREE.DirectionalLight(0xffe3b5,2.2);
+sun.position.set(-25,40,20);sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-55;sun.shadow.camera.right=55;sun.shadow.camera.top=55;sun.shadow.camera.bottom=-55;
+scene.add(sun);
+
+const mat=(color,roughness=1)=>new THREE.MeshStandardMaterial({color,roughness});
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(180,180),mat(0x65734d));
+ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const grid=new THREE.GridHelper(180,45,0x536347,0x536347);grid.position.y=.015;scene.add(grid);
+
+function box(x,y,z,sx,sy,sz,color){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat(color));
+ m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);return m;
+}
+// Ruined city blocks and cover
+for(let i=0;i<34;i++){
+ const x=(Math.random()-.5)*125,z=(Math.random()-.5)*125;
+ if(Math.hypot(x,z)<13)continue;
+ const w=3+Math.random()*7,h=2+Math.random()*10,d=3+Math.random()*7;
+ const b=box(x,h/2,z,w,h,d,[0x77766b,0x666b67,0x817b6e,0x555e5c][i%4]);
+ if(Math.random()>.45)box(x,h+.5,z,w*.65,.5,d*.65,0x444a48);
+}
+for(let i=0;i<28;i++){
+ const x=(Math.random()-.5)*90,z=(Math.random()-.5)*90;
+ if(Math.hypot(x,z)<12)continue;
+ const trunk=box(x,.8,z,.45,1.6,.45,0x59432e);
+ const crown=new THREE.Mesh(new THREE.SphereGeometry(1.5,8,7),mat(0x385b36));
+ crown.position.set(x,2.3,z);crown.castShadow=true;scene.add(crown);
+}
+for(let i=0;i<18;i++){
+ const x=(Math.random()-.5)*75,z=(Math.random()-.5)*75;
+ if(Math.hypot(x,z)<10)continue;
+ box(x,.65,z,2.5,1.3,1.3,0x716c5e);
+}
+
+// Player model
+const player=new THREE.Group();scene.add(player);
+const body=new THREE.Mesh(new THREE.CapsuleGeometry(.42,.8,5,8),mat(0x394a3c));body.position.y=1.15;body.castShadow=true;player.add(body);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.27,12,10),mat(0x9b7258));head.position.y=1.9;head.castShadow=true;player.add(head);
+const helmet=new THREE.Mesh(new THREE.SphereGeometry(.3,12,8,0,Math.PI*2,0,Math.PI/2),mat(0x26392d));helmet.position.y=2.08;player.add(helmet);
+const gun=box(.42,1.35,-.1,.16,.16,1.05,0x202323);player.add(gun);
+player.position.set(0,0,0);
+
+const enemies=[];
+function makeEnemy(x,z){
+ const g=new THREE.Group();g.position.set(x,0,z);scene.add(g);
+ const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.38,.72,4,7),mat(0x6d3931));torso.position.y=1.12;torso.castShadow=true;g.add(torso);
+ const face=new THREE.Mesh(new THREE.SphereGeometry(.25,10,8),mat(0x916c54));face.position.y=1.85;g.add(face);
+ const hat=new THREE.Mesh(new THREE.SphereGeometry(.29,10,7,0,Math.PI*2,0,Math.PI/2),mat(0x332c29));hat.position.y=2.02;g.add(hat);
+ const marker=new THREE.Mesh(new THREE.SphereGeometry(.12,8,8),mat(0xff4433));marker.position.y=2.35;g.add(marker);
+ enemies.push({group:g,hp:3,shotTimer:1+Math.random()*2,alive:true});
+}
+for(let i=0;i<12;i++){
+ let a=Math.random()*Math.PI*2,r=17+Math.random()*28;
+ makeEnemy(Math.cos(a)*r,Math.sin(a)*r);
+}
+
+const bullets=[];
+function shoot(from,to,enemyBullet=false){
+ const dir=new THREE.Vector3().subVectors(to,from).normalize();
+ const mesh=new THREE.Mesh(new THREE.SphereGeometry(.09,7,7),mat(enemyBullet?0xff5b39:0xffd36a));
+ mesh.position.copy(from);scene.add(mesh);
+ bullets.push({mesh,vel:dir.multiplyScalar(enemyBullet?23:48),life:1.5,enemyBullet});
+}
+let hp=100,kills=0,gameOver=false,started=false,aiming=false,fireHeld=false,shotCooldown=0,damageFlash=0;
+const keys={};
+addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(e.key===' ')fireHeld=true});
+addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;if(e.key===' ')fireHeld=false});
+let pointerDown=false;
+addEventListener('pointerdown',e=>{if(e.target===canvas){pointerDown=true}});
+addEventListener('pointerup',()=>pointerDown=false);
+let mouseX=0,mouseY=0;
+addEventListener('pointermove',e=>{mouseX=e.clientX;mouseY=e.clientY});
+canvas.addEventListener('click',()=>{if(started&&!gameOver)fireHeld=true});
+canvas.addEventListener('pointerleave',()=>fireHeld=false);
+
+const stick=document.querySelector('#stick'),knob=document.querySelector('#knob');
+let joy={x:0,y:0},stickId=null;
+function setJoy(e){
+ const r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+ let dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),max=r.width*.34;
+ if(len>max){dx=dx/len*max;dy=dy/len*max}
+ joy.x=dx/max;joy.y=dy/max;
+ knob.style.transform=`translate(${dx}px,${dy}px)`;
+}
+stick.addEventListener('pointerdown',e=>{stickId=e.pointerId;stick.setPointerCapture(stickId);setJoy(e)});
+stick.addEventListener('pointermove',e=>{if(e.pointerId===stickId)setJoy(e)});
+function resetJoy(){stickId=null;joy={x:0,y:0};knob.style.transform='translate(0,0)'}
+stick.addEventListener('pointerup',resetJoy);stick.addEventListener('pointercancel',resetJoy);
+document.querySelector('#fire').addEventListener('pointerdown',e=>{e.preventDefault();fireHeld=true});
+['pointerup','pointercancel','pointerleave'].forEach(ev=>document.querySelector('#fire').addEventListener(ev,()=>fireHeld=false));
+document.querySelector('#aim').addEventListener('pointerdown',()=>aiming=true);
+['pointerup','pointercancel','pointerleave'].forEach(ev=>document.querySelector('#aim').addEventListener(ev,()=>aiming=false));
+
+const raycaster=new THREE.Raycaster();
+function playerShoot(){
+ const origin=player.position.clone().add(new THREE.Vector3(0,1.45,0));
+ let target;
+ if(enemies.length){
+  const living=enemies.filter(e=>e.alive);
+  if(living.length){
+   living.sort((a,b)=>a.group.position.distanceTo(player.position)-b.group.position.distanceTo(player.position));
+   target=living[0].group.position.clone().add(new THREE.Vector3(0,1.2,0));
+  }
+ }
+ if(!target)target=origin.clone().add(new THREE.Vector3(0,0,-35));
+ shoot(origin,target,false);
+}
+function updateHud(){
+ document.querySelector('#health').style.width=Math.max(0,hp)+'%';
+ document.querySelector('#kills').textContent=kills;
+ document.querySelector('#left').textContent=enemies.filter(e=>e.alive).length;
+}
+document.querySelector('#start').addEventListener('click',()=>{started=true;document.querySelector('#overlay').style.display='none';});
+
+const camOffset=new THREE.Vector3(0,5.2,8.5);
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.04);
+ if(started&&!gameOver){
+  shotCooldown-=dt;
+  const forward=(keys.w||keys.z?1:0)-(keys.s?1:0)-joy.y;
+  const side=(keys.d?1:0)-(keys.a||keys.q?1:0)+joy.x;
+  const move=new THREE.Vector3(side,0,forward);
+  if(move.length()>1)move.normalize();
+  const speed=7;
+  player.position.x+=move.x*speed*dt;
+  player.position.z-=move.z*speed*dt;
+  player.position.x=THREE.MathUtils.clamp(player.position.x,-78,78);
+  player.position.z=THREE.MathUtils.clamp(player.position.z,-78,78);
+  if(move.lengthSq()>.01)player.rotation.y=Math.atan2(move.x,-move.z);
+  // Camera follows from behind
+  const desired=player.position.clone().add(new THREE.Vector3(0,0,1).applyAxisAngle(new THREE.Vector3(0,1,0),player.rotation.y).multiplyScalar(8)).add(new THREE.Vector3(0,4.4,0));
+  camera.position.lerp(desired,1-Math.pow(.001,dt));
+  const look=player.position.clone().add(new THREE.Vector3(0,1.35,0)).add(new THREE.Vector3(0,0,-5).applyAxisAngle(new THREE.Vector3(0,1,0),player.rotation.y));
+  camera.lookAt(look);
+  if(fireHeld&&shotCooldown<=0){playerShoot();shotCooldown=.28}
+  // Enemy AI
+  for(const e of enemies){
+   if(!e.alive)continue;
+   const diff=player.position.clone().sub(e.group.position);const dist=diff.length();
+   e.group.lookAt(player.position.x,0,player.position.z);
+   if(dist>7){diff.normalize();e.group.position.addScaledVector(diff,dt*1.15)}
+   e.shotTimer-=dt;
+   if(dist<27&&e.shotTimer<=0){
+    const from=e.group.position.clone().add(new THREE.Vector3(0,1.3,0));
+    const to=player.position.clone().add(new THREE.Vector3(0,1.1,0));
+    shoot(from,to,true);e.shotTimer=1.8+Math.random()*1.2;
+   }
+  }
+  // Bullets collide
+  for(let i=bullets.length-1;i>=0;i--){
+   const b=bullets[i];b.mesh.position.addScaledVector(b.vel,dt);b.life-=dt;
+   if(b.enemyBullet&&b.mesh.position.distanceTo(player.position.clone().add(new THREE.Vector3(0,1,0)))<.85){
+    hp-=12;b.life=0;damageFlash=.12;updateHud();
+   }else if(!b.enemyBullet){
+    for(const e of enemies){
+     if(e.alive&&b.mesh.position.distanceTo(e.group.position.clone().add(new THREE.Vector3(0,1.25,0)))<.9){
+      e.hp--;b.life=0;
+      if(e.hp<=0){e.alive=false;scene.remove(e.group);kills++;updateHud()}
+      break;
+     }
+    }
+   }
+   if(b.life<=0){scene.remove(b.mesh);bullets.splice(i,1)}
+  }
+  if(damageFlash>0){damageFlash-=dt;document.querySelector('#healthWrap').style.filter='brightness(1.8)';}
+  else document.querySelector('#healthWrap').style.filter='';
+  if(hp<=0){gameOver=true;document.querySelector('#message').textContent='MISSION ÉCHOUÉE — Recharge la page pour recommencer';}
+  if(enemies.every(e=>!e.alive)){gameOver=true;document.querySelector('#message').textContent='VICTOIRE ! LE ROYAUME EST À TOI';}
+ }
+ renderer.render(scene,camera);
+}
+camera.position.set(0,5,9);camera.lookAt(0,1,0);updateHud();animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body>
+</html>
